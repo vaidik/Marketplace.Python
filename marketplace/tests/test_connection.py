@@ -8,34 +8,19 @@ import oauth2 as oauth
 
 from mock import Mock
 
+from marketplace.auth import OAuth
 from marketplace.connection import Connection
+from marketplace.tests.utils import MarketplaceTestCase
+from marketplace.tests.utils import Response
 
 log = logging.getLogger('test.%s' % __name__)
 
-# Preparing to mock the requests
-OLD_POST = requests.post
-OLD_PUT = requests.put
-OLD_GET = requests.get
-OLD_DELETE = requests.delete
 
-
-class Response(requests.Response):
-    def __init__(self, status_code, content=None):
-        super(Response, self).__init__()
-        self.status_code = status_code
-        self._content = content
-
-
-class TestClient(unittest.TestCase):
+class TestConnection(MarketplaceTestCase):
 
     def setUp(self):
-        self.conn = Connection(consumer_key='key', consumer_secret='secret')
-
-    def tearDown(self):
-        requests.post = OLD_POST
-        requests.put = OLD_PUT
-        requests.get = OLD_GET
-        requests.delete = OLD_DELETE
+        self.conn = Connection(OAuth(consumer_key='key',
+                                     consumer_secret='secret'))
 
     def test_raising_on_httperror(self):
         resp = {"reason": "Error with OAuth headers"}
@@ -61,26 +46,22 @@ class TestClient(unittest.TestCase):
             resp['reason'])
 
     def test_error_reason_text(self):
-        resp = "<html><title>404</title><body><p>Error 404</p></body></html>"
+        # when response body is JSON with reason as a top-level key
+        resp = dict(reason='404. Page not found.')
         self.assertEquals(
-            Connection._get_error_reason(Response(204, resp)),
+            Connection._get_error_reason(Response(404, json.dumps(resp))),
+            resp['reason'])
+
+        # when response body is JSON without reason as a top-level key
+        resp = json.dumps(dict(why='404. Page not found.'))
+        self.assertEquals(
+            Connection._get_error_reason(Response(404, resp)),
             resp)
 
-    def test_set_consumer(self):
-        assert isinstance(self.conn.consumer, oauth.Consumer)
-
-    def test_prepare_request(self):
-        prepared = self.conn.prepare_request('GET', 'http://example.com')
-        assert 'headers' in prepared
-        assert 'data' in prepared
-        assert not prepared['data']
-
-        data = {"some": "data"}
-        prepared = self.conn.prepare_request('POST', 'http://ex.com', data)
-        self.assertEquals(prepared['data'], json.dumps(data))
-
-        prepared = self.conn.prepare_request('GET', 'http://ex.com', data)
-        self.assertEquals(prepared['data'], urllib.urlencode(data))
+        # when response body does not have JSON
+        resp = '404 - Page does not exist.'
+        self.assertRaises(Exception, Connection._get_error_reason,
+                          Response(404, resp))
 
     def test_get(self):
         requests.get = Mock(return_value=Response(200, '{}'))
@@ -96,6 +77,11 @@ class TestClient(unittest.TestCase):
         requests.put = Mock(return_value=Response(202, '{}'))
         self.conn.fetch('PUT', 'http://ex.com')
         assert requests.put.called
+
+    def test_patch(self):
+        requests.patch = Mock(return_value=Response(201, '{}'))
+        self.conn.fetch('PATCH', 'http://ex.com')
+        assert requests.patch.called
 
     def test_delete(self):
         requests.delete = Mock(return_value=Response(204, '{}'))

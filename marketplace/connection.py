@@ -3,11 +3,10 @@
 
 import json
 import logging
-import time
+import requests
 import urllib
 
-import oauth2 as oauth
-import requests
+from requests.exceptions import HTTPError
 
 log = logging.getLogger('marketplace.%s' % __name__)
 
@@ -18,69 +17,51 @@ class NotExpectedStatusCode(requests.exceptions.HTTPError):
     pass
 
 
-def _get_args(consumer):
-    """Provide a dict with oauth data
-    """
-    return dict(
-        oauth_consumer_key=consumer.key,
-        oauth_nonce=oauth.generate_nonce(),
-        oauth_signature_method='HMAC-SHA1',
-        oauth_timestamp=int(time.time()),
-        oauth_version='1.0')
-
-
 class Connection:
-    """ Keeps the consumer class and provides the way to connect to the
-    Marketplace API
+    """ Provides the way to connect to the Marketplace API.
     """
-    signature_method = oauth.SignatureMethod_HMAC_SHA1()
-    consumer = None
 
-    def __init__(self, consumer_key, consumer_secret):
-        self.set_consumer(consumer_key, consumer_secret)
+    CONNECTION_OBJ = None
 
-    def set_consumer(self, consumer_key, consumer_secret):
-        """Sets the consumer attribute
-        """
-        self.consumer = oauth.Consumer(consumer_key, consumer_secret)
+    def __init__(self, auth_handler):
+        self.auth = auth_handler
 
-    def prepare_request(self, method, url, body=''):
-        """Adds consumer and signs the request
-
-        :returns: headers of the signed request
-        """
-        req = oauth.Request(method=method, url=url,
-                            parameters=_get_args(self.consumer))
-        req.sign_request(self.signature_method, self.consumer, None)
-
-        headers = req.to_header()
-        headers['Content-type'] = 'application/json'
-        if body:
-            if method == 'GET':
-                body = urllib.urlencode(body)
+    @classmethod
+    def get(cls, auth_handler=None):
+        if cls.CONNECTION_OBJ is None:
+            if auth_handler is not None:
+                cls.CONNECTION_OBJ = Connection(auth_handler)
             else:
-                body = json.dumps(body)
-        return {"headers": headers, "data": body}
+                raise Exception('Requires auth handler.')
+
+        return cls.CONNECTION_OBJ
 
     @staticmethod
     def _get_error_reason(response):
         """Extract error reason from the response. It might be either
         the 'reason' or the entire response
         """
-        body = response.json
+        try:
+            body = response.json()
+        except:
+            raise Exception('API response is not valid JSON. %s'
+                            % response.text)
+
         if body and 'reason' in body:
             return body['reason']
-        return response.content
+        return response.text
 
     def fetch(self, method, url, data=None, expected_status_code=None):
         """Prepare the headers, encode data, call API and provide
         data it returns
         """
-        kwargs = self.prepare_request(method, url, data)
+        kwargs = self.auth.prepare_request(method, url, data)
+        kwargs['headers']['Content-type'] = 'application/json'
         response = getattr(requests, method.lower())(url, **kwargs)
         log.debug(str(response.__dict__))
         if response.status_code >= 400:
-            response.raise_for_status()
+            raise HTTPError('%s - %s' % (response.status_code, response.text))
+
         if (expected_status_code
                 and response.status_code != expected_status_code):
             raise NotExpectedStatusCode(self._get_error_reason(response))

@@ -13,7 +13,9 @@ with Marketplace.
 __version__ = '0.1'
 __all__ = [
         'Client',
+        'resources',
 ]
 __author__ = 'Piotr Zalewa <zalun@mozilla.com>'
 
 from .client import Client
+from . import resources
