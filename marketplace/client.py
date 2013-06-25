@@ -39,13 +39,15 @@ class Client:
         self.prefix = prefix
         self.base_uri = urlunparse((self.protocol,
                                    '%s:%s' % (self.domain, self.port),
-                                   '%s/api/v1' % self.prefix, '', '', ''))
+                                   '%s/api/v1/' % self.prefix, '', '', ''))
 
         self.auth = auth
         self.conn = self.get_connection(auth)
 
         # all the resources get instantiated
         self.accounts = resources.Accounts(self.base_uri, self.conn)
+        self.apps = resources.Apps(self.base_uri, self.conn)
+        self.payments = resources.Payments(self.base_uri, self.conn)
 
     @staticmethod
     def get_connection(auth):

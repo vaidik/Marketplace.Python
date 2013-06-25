@@ -12,7 +12,9 @@ class BaseResource(object):
         if not len(self.URIs.keys()):
             raise Exception('You have not defined URIs for your resource.')
 
-    def url(self, key):
+    def url(self, key, format=None):
         """Builds URL for your API calls.
         """
-        return urljoin(self.base_uri, self.URIs[key])
+
+        uri = (self.URIs[key] % format) if format else self.URIs[key]
+        return urljoin(self.base_uri, uri)
